@@ -4,7 +4,6 @@ from folium import plugins
 from math import cos, sin, radians, sqrt
 import subprocess
 
-
 grafo_archive = "./csv/grafo.csv"
 nodo_archive = "./csv/nodos.csv"
 direccion_archive = "./csv/direccion.csv"
@@ -14,7 +13,6 @@ conexiones = []
 nodos = []
 distancias = []
 
-# Diccionario para las coordenadas 3D de cada nodo OSM
 coords = {}
 
 
@@ -105,7 +103,6 @@ def obtenerNodosRuta(ruta, nodos):
     return nodos_ruta
 
 
-# Crear las coordenadas 3D asociadas a cada ID de OSM
 for nodo in nodos:
     id_nodo = nodo[0]
     coord = calcularCoord(nodo)
@@ -113,7 +110,6 @@ for nodo in nodos:
     coords[id_nodo] = coord
 
 
-# Calcular las distancias de las conexiones del grafo
 for i in range(len(conexiones)):
     nodoi, nodof = conexiones[i]
 
@@ -122,7 +118,6 @@ for i in range(len(conexiones)):
     distancias.append(distancia)
 
 
-# Agregar la distancia a cada conexión
 conexiones = [
     conexion + [distancia]
     for conexion, distancia in zip(conexiones, distancias)
@@ -137,7 +132,6 @@ for conexion in conexiones:
     )
 
 
-# Ejecutar el programa C++
 resultado = subprocess.run(
     ["./programa", str(nodo_inicial), str(nodo_final)]
     + argumentos,
@@ -170,7 +164,6 @@ print("RUTA:", ruta)
 print("CANTIDAD DE NODOS:", len(nodos))
 
 
-# Coordenadas geográficas de la ruta para Folium
 coords_ruta = convertRoute(ruta, nodos)
 
 
@@ -191,14 +184,12 @@ nodos_mostrar = [
 ]
 
 
-# Crear mapa
 mapa = folium.Map(
     location=coords_ruta[0],
     zoom_start=15
 )
 
 
-# Mostrar algunos nodos de la ruta
 for nodo in nodos_mostrar:
     id_nodo = nodo[0]
     latitud = nodo[1]
@@ -232,13 +223,11 @@ for nodo in nodos_mostrar:
     ).add_to(mapa)
 
 
-# Dibujar la ruta
 linea = folium.PolyLine(coords_ruta)
 
 linea.add_to(mapa)
 
 
-# Agregar flechas indicando la dirección
 plugins.PolyLineTextPath(
     linea,
     "➜",
@@ -252,5 +241,4 @@ plugins.PolyLineTextPath(
 ).add_to(mapa)
 
 
-# Guardar mapa
 mapa.save("mapa.html")
