@@ -1,244 +1,558 @@
 import csv
+import json
 import folium
-from folium import plugins
-from math import cos, sin, radians, sqrt
-import subprocess
+from branca.element import Element
+
 
 grafo_archive = "./csv/grafo.csv"
 nodo_archive = "./csv/nodos.csv"
-direccion_archive = "./csv/direccion.csv"
-Evento_archive = "./Eventos.csv"
 
-conexiones = []
-nodos = []
-distancias = []
-
-coords = {}
+nodos_por_id = {}
+ids_grafo = set()
 
 
-with open(grafo_archive, "r") as archive:
+
+
+with open(nodo_archive, "r", encoding="utf-8") as archive:
+    lector = csv.reader(archive)
+    next(lector)
+
+    for fila in lector:
+        id_nodo = int(fila[0])
+        latitud = float(fila[1])
+        longitud = float(fila[2])
+
+        nodos_por_id[id_nodo] = {
+            "id": id_nodo,
+            "lat": latitud,
+            "lon": longitud
+        }
+
+
+with open(grafo_archive, "r", encoding="utf-8") as archive:
     lector = csv.reader(archive)
     next(lector)
 
     for fila in lector:
         origen = int(fila[0])
         destino = int(fila[1])
-        conexion = [origen, destino]
-        conexiones.append(conexion)
+
+        ids_grafo.add(origen)
+        ids_grafo.add(destino)
 
 
-with open(nodo_archive, "r") as archive:
-    lector = csv.reader(archive)
-    next(lector)
-
-    for fila in lector:
-        id = int(fila[0])
-        latitud = float(fila[1])
-        longitud = float(fila[2])
-        altitud = float(fila[3])
-
-        nodo = [id, latitud, longitud, altitud]
-        nodos.append(nodo)
-
-
-with open(direccion_archive, "r") as archive:
-    lector = csv.reader(archive)
-    next(lector)
-
-    for fila in lector:
-        nodo_inicial = int(fila[0])
-        nodo_final = float(fila[1])
-
-
-def calcularCoord(n):
-    R = 6371000
-
-    _, latitud, longitud, altitud = n
-
-    latitud = radians(latitud)
-    longitud = radians(longitud)
-
-    x = (R + altitud) * cos(latitud) * cos(longitud)
-    y = (R + altitud) * cos(latitud) * sin(longitud)
-    z = (R + altitud) * sin(latitud)
-
-    coordenadas = [x, y, z]
-
-    return coordenadas
-
-
-def calculardist(nodoi, nodof):
-    x1, y1, z1 = coords[nodoi]
-    x2, y2, z2 = coords[nodof]
-
-    return sqrt(
-        (x2 - x1) ** 2 +
-        (y2 - y1) ** 2 +
-        (z2 - z1) ** 2
-    )
-
-
-def convertRoute(route, nodos):
-    coordenadas_ruta = []
-
-    for id_nodo in route:
-        for nodo in nodos:
-            if nodo[0] == id_nodo:
-                coordenadas_ruta.append(
-                    [nodo[1], nodo[2]]
-                )
-                break
-
-    return coordenadas_ruta
-
-
-def obtenerNodosRuta(ruta, nodos):
-    nodos_ruta = []
-
-    for id_nodo in ruta:
-        for nodo in nodos:
-            if nodo[0] == id_nodo:
-                nodos_ruta.append(nodo)
-
-    return nodos_ruta
-
-
-for nodo in nodos:
-    id_nodo = nodo[0]
-    coord = calcularCoord(nodo)
-
-    coords[id_nodo] = coord
-
-
-for i in range(len(conexiones)):
-    nodoi, nodof = conexiones[i]
-
-    distancia = calculardist(nodoi, nodof)
-
-    distancias.append(distancia)
-
-
-conexiones = [
-    conexion + [distancia]
-    for conexion, distancia in zip(conexiones, distancias)
+nodos_mapa = [
+    nodos_por_id[id_nodo]
+    for id_nodo in ids_grafo
+    if id_nodo in nodos_por_id
 ]
 
 
-argumentos = []
-
-for conexion in conexiones:
-    argumentos.append(
-        ",".join(map(str, conexion))
-    )
+if not nodos_mapa:
+    raise ValueError("No se encontraron nodos para mostrar en el mapa.")
 
 
-resultado = subprocess.run(
-    ["./programa", str(nodo_inicial), str(nodo_final)]
-    + argumentos,
-    capture_output=True,
-    text=True
-)
+latitud_centro = sum(
+    nodo["lat"] for nodo in nodos_mapa
+) / len(nodos_mapa)
 
-
-ruta = []
-
-
-with open(Evento_archive, "r") as archive:
-    reader = csv.reader(archive)
-    next(reader)
-
-    for read in reader:
-        evento = read[0]
-        nodos_ruta = read[2]
-
-        if evento == "PACKAGESEND":
-            origen, destino = nodos_ruta.split("-")
-
-            if not ruta:
-                ruta.append(int(origen))
-
-            ruta.append(int(destino))
-
-
-print("RUTA:", ruta)
-print("CANTIDAD DE NODOS:", len(nodos))
-
-
-coords_ruta = convertRoute(ruta, nodos)
-
-
-nodos_ruta = obtenerNodosRuta(ruta, nodos)
-
-
-cantidad = len(nodos_ruta)
-
-indices = [
-    int(i * (cantidad - 1) / 10)
-    for i in range(11)
-]
-
-
-nodos_mostrar = [
-    nodos_ruta[i]
-    for i in indices
-]
+longitud_centro = sum(
+    nodo["lon"] for nodo in nodos_mapa
+) / len(nodos_mapa)
 
 
 mapa = folium.Map(
-    location=coords_ruta[0],
-    zoom_start=15
+    location=[latitud_centro, longitud_centro],
+    zoom_start=15,
+    control_scale=True
 )
 
 
-for nodo in nodos_mostrar:
-    id_nodo = nodo[0]
-    latitud = nodo[1]
-    longitud = nodo[2]
-    elevacion = nodo[3]
-
-    if id_nodo == ruta[0]:
-        tipo = "origen"
-        color = "red"
-
-    elif id_nodo == ruta[-1]:
-        tipo = "destino"
-        color = "green"
-
-    else:
-        tipo = "camino"
-        color = "blue"
-
-    informacion = f"""
-    <b>Nodo {id_nodo}</b><br>
-    Tipo: {tipo}<br>
-    Latitud: {latitud}<br>
-    Longitud: {longitud}<br>
-    Elevación: {elevacion} m
-    """
-
-    folium.Marker(
-        [latitud, longitud],
-        popup=informacion,
-        icon=folium.Icon(color=color)
-    ).add_to(mapa)
+nodos_json = json.dumps(nodos_mapa)
 
 
-linea = folium.PolyLine(coords_ruta)
+script = """
+window.addEventListener("load", function() {
+    var mapFlowMap = __MAPA__;
+    var nodos = __NODOS__;
 
-linea.add_to(mapa)
+    var seleccion = [];
+    var marcadores = [];
 
+    var nodosPorId = {};
 
-plugins.PolyLineTextPath(
-    linea,
-    "➜",
-    repeat=True,
-    offset=7,
-    attributes={
-        "fill": "black",
-        "font-weight": "bold",
-        "font-size": "16"
+    nodos.forEach(function(nodo) {
+        nodosPorId[String(nodo.id)] = nodo;
+    });
+
+    var lineaRuta = null;
+
+    var bordeRuta = null;
+
+    var flechasRuta = [];
+
+    var ultimaRuta = null;
+
+    var mediosTransporte = {
+        caminar: {
+            nombre: "A pie",
+            velocidad: 5
+        },
+        bicicleta: {
+            nombre: "Bicicleta",
+            velocidad: 15
+        },
+        automovil: {
+            nombre: "Automóvil",
+            velocidad: 30
+        }
+    };
+
+    function distanciaMetros(lat1, lon1, lat2, lon2) {
+        var R = 6371000;
+
+        var dLat = (lat2 - lat1) * Math.PI / 180;
+        var dLon = (lon2 - lon1) * Math.PI / 180;
+
+        var a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) *
+            Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+        return 2 * R * Math.atan2(
+            Math.sqrt(a),
+            Math.sqrt(1 - a)
+        );
     }
-).add_to(mapa)
 
+    function buscarNodoCercano(lat, lon) {
+        var nodoCercano = null;
+        var distanciaMinima = Infinity;
+
+        nodos.forEach(function(nodo) {
+            var distancia = distanciaMetros(
+                lat,
+                lon,
+                nodo.lat,
+                nodo.lon
+            );
+
+            if (distancia < distanciaMinima) {
+                distanciaMinima = distancia;
+                nodoCercano = nodo;
+            }
+        });
+
+        return {
+            nodo: nodoCercano,
+            distancia: distanciaMinima
+        };
+    }
+
+    var panel = L.control({ position: "topright" });
+
+    panel.onAdd = function() {
+        var div = L.DomUtil.create("div", "mapflow-panel");
+    div.innerHTML = `
+        <div class="mapflow-titulo">MapFlow</div>
+
+        <div id="mapflow-estado">
+            Haz clic en el mapa para seleccionar el origen.
+        </div>
+
+        <div id="mapflow-origen"></div>
+        <div id="mapflow-destino"></div>
+
+        <div id="mapflow-resumen"></div>
+
+        <label for="mapflow-medio">Medio de transporte</label>
+
+        <select id="mapflow-medio">
+            <option value="caminar">🚶 A pie</option>
+            <option value="bicicleta">🚲 Bicicleta</option>
+            <option value="automovil">🚗 Automóvil</option>
+        </select>
+
+        <div id="mapflow-tiempo"></div>
+
+        <button id="mapflow-reiniciar" type="button">
+            Reiniciar selección
+        </button>
+    `;
+
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+
+        return div;
+    };
+
+    panel.addTo(mapFlowMap);
+
+    document.getElementById("mapflow-medio")
+        .addEventListener("change", actualizarTiempoEstimado);
+
+    var estilos = document.createElement("style");
+
+    estilos.textContent = `
+        .mapflow-panel {
+            background: white;
+            padding: 14px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.20);
+            width: 245px;
+            font-family: Arial, sans-serif;
+            color: #222;
+        }
+
+        .mapflow-titulo {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #2457C5;
+        }
+
+        #mapflow-estado {
+            font-size: 13px;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+
+        #mapflow-origen, #mapflow-destino {
+            font-size: 12px;
+            margin: 8px 0;
+            overflow-wrap: anywhere;
+        }
+
+        #mapflow-reiniciar {
+            margin-top: 12px;
+            width: 100%;
+            padding: 9px;
+            border: none;
+            border-radius: 6px;
+            background: #2457C5;
+            color: white;
+            cursor: pointer;
+        }
+
+        #mapflow-reiniciar:hover {
+            background: #17429B;
+        }
+
+        #mapflow-medio {
+            width: 100%;
+            padding: 9px;
+            margin-top: 8px;
+            border: 1px solid #d0d7e2;
+            border-radius: 6px;
+            background: white;
+            font-size: 14px;
+        }
+
+        #mapflow-resumen {
+            margin: 12px 0;
+            font-size: 14px;
+        }
+
+        #mapflow-tiempo {
+            margin-top: 10px;
+            padding: 10px;
+            background: #edf3ff;
+            color: #2457C5;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+    `;
+
+    document.head.appendChild(estilos);
+
+    function actualizarPanel() {
+        var origen = document.getElementById("mapflow-origen");
+        var destino = document.getElementById("mapflow-destino");
+        var estado = document.getElementById("mapflow-estado");
+
+        origen.textContent = "";
+        destino.textContent = "";
+
+        if (seleccion.length === 0) {
+            estado.textContent =
+                "Haz clic en el mapa para seleccionar el origen.";
+        } else if (seleccion.length === 1) {
+            estado.textContent =
+                "Origen seleccionado. Haz clic para elegir el destino.";
+
+            origen.textContent =
+                "Origen: nodo " + seleccion[0].nodo.id;
+        } else {
+            estado.textContent =
+                "Origen y destino seleccionados.";
+
+            origen.textContent =
+                "Origen: nodo " + seleccion[0].nodo.id;
+
+            destino.textContent =
+                "Destino: nodo " + seleccion[1].nodo.id;
+        }
+    }
+
+    function actualizarTiempoEstimado() {
+        var salida = document.getElementById("mapflow-tiempo");
+
+        if (!ultimaRuta) {
+            salida.textContent = "";
+            return;
+        }
+
+        var medioSeleccionado =
+            document.getElementById("mapflow-medio").value;
+
+        var medio = mediosTransporte[medioSeleccionado];
+
+        var distanciaKm = Number(ultimaRuta.distancia_km);
+
+        var minutos = (distanciaKm / medio.velocidad) * 60;
+        var minutosRedondeados = Math.round(minutos);
+
+        var tiempoTexto;
+
+        if (minutosRedondeados < 1) {
+            tiempoTexto = "menos de 1 minuto";
+        } else if (minutosRedondeados < 60) {
+            tiempoTexto = minutosRedondeados + " min";
+        } else {
+            var horas = Math.floor(minutosRedondeados / 60);
+            var minutosRestantes = minutosRedondeados % 60;
+
+            tiempoTexto = horas + " h";
+
+            if (minutosRestantes > 0) {
+                tiempoTexto += " " + minutosRestantes + " min";
+            }
+        }
+
+        salida.textContent =
+            "Tiempo estimado (" + medio.nombre + "): " + tiempoTexto;
+    }
+
+    mapFlowMap.on("click", function(e) {
+        if (seleccion.length >= 2) {
+            return;
+        }
+
+        var resultado = buscarNodoCercano(
+            e.latlng.lat,
+            e.latlng.lng
+        );
+
+        var nodo = resultado.nodo;
+
+        if (!nodo) {
+            return;
+        }
+
+        var esOrigen = seleccion.length === 0;
+        var tipo = esOrigen ? "Origen" : "Destino";
+        var color = esOrigen ? "#E53935" : "#2E9D50";
+
+        seleccion.push({
+            nodo: nodo,
+            distanciaClic: resultado.distancia
+        });
+
+        var marcador = L.circleMarker(
+            [nodo.lat, nodo.lon],
+            {
+                radius: 8,
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.9
+            }
+        ).addTo(mapFlowMap);
+
+        marcador.bindPopup(
+            "<b>" + tipo + "</b><br>" +
+            "Nodo OSM: " + nodo.id + "<br>" +
+            "Distancia desde el clic: " +
+            Math.round(resultado.distancia) + " m"
+        ).openPopup();
+
+        marcadores.push(marcador);
+
+                actualizarPanel();
+
+        if (seleccion.length === 2) {
+            fetch("/seleccion", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    origen: seleccion[0].nodo.id,
+                    destino: seleccion[1].nodo.id
+                })
+            })
+            .then(async response => {
+                var datos = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(
+                        datos.error || "No se pudo calcular la ruta."
+                    );
+                }
+
+                return datos;
+            })
+           .then(datos => {
+                console.log("Ruta recibida de C++:", datos.ruta);
+
+                var coordenadasRuta = datos.ruta
+                    .map(function(id) {
+                        return nodosPorId[String(id)];
+                    })
+                    .filter(function(nodo) {
+                        return nodo !== undefined;
+                    })
+                    .map(function(nodo) {
+                        return [nodo.lat, nodo.lon];
+                    });
+
+                if (lineaRuta) {
+                    mapFlowMap.removeLayer(lineaRuta);
+                }
+
+                if (bordeRuta) {
+                    mapFlowMap.removeLayer(bordeRuta);
+                }
+
+                bordeRuta = L.polyline(coordenadasRuta, {
+                    color: "#FFFFFF",
+                    weight: 8,
+                    opacity: 0.95,
+                    lineCap: "round",
+                    lineJoin: "round"
+                }).addTo(mapFlowMap);
+
+                lineaRuta = L.polyline(coordenadasRuta, {
+                    color: "#2457C5",
+                    weight: 4,
+                    opacity: 1,
+                    lineCap: "round",
+                    lineJoin: "round"
+                }).addTo(mapFlowMap);
+
+                
+                flechasRuta.forEach(function(flecha) {
+                    mapFlowMap.removeLayer(flecha);
+                });
+
+                flechasRuta = [];
+
+                
+                for (var i = 0; i < coordenadasRuta.length - 1; i += 3) {
+                    var p1 = coordenadasRuta[i];
+                    var p2 = coordenadasRuta[i + 1];
+
+                    var lat1 = p1[0] * Math.PI / 180;
+                    var lon1 = p1[1] * Math.PI / 180;
+                    var lat2 = p2[0] * Math.PI / 180;
+                    var lon2 = p2[1] * Math.PI / 180;
+
+                    var dLon = lon2 - lon1;
+
+                    var y = Math.sin(dLon) * Math.cos(lat2);
+
+                    var x =
+                        Math.cos(lat1) * Math.sin(lat2) -
+                        Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+
+                    var angulo = (
+                        Math.atan2(y, x) * 180 / Math.PI + 360
+                    ) % 360;
+
+                    var latMedia = (p1[0] + p2[0]) / 2;
+                    var lonMedia = (p1[1] + p2[1]) / 2;
+
+                    var iconoFlecha = L.divIcon({
+                            className: "mapflow-flecha-icon",
+                            html:
+                                '<div style="' +
+                                'display:flex;' +
+                                'align-items:center;' +
+                                'justify-content:center;' +
+                                'width:32px;' +
+                                'height:32px;' +
+                                'border-radius:50%;' +
+                                'background:white;' +
+                                'border:2px solid #2457C5;' +
+                                'box-shadow:0 2px 5px rgba(0,0,0,0.35);' +
+                                'color:#2457C5;' +
+                                'font-size:28px;' +
+                                'font-weight:900;' +
+                                'line-height:1;' +
+                                'transform:rotate(' + angulo + 'deg);' +
+                                '">↑</div>',
+                            iconSize: [36, 36],
+                            iconAnchor: [18, 18]
+                        });
+
+                    var flecha = L.marker(
+                        [latMedia, lonMedia],
+                        {
+                            icon: iconoFlecha,
+                            interactive: false,
+                            keyboard: false
+                        }
+                    ).addTo(mapFlowMap);
+
+                    flechasRuta.push(flecha);
+                }
+
+                mapFlowMap.fitBounds(lineaRuta.getBounds(), {
+                    padding: [30, 30]
+                });
+
+                ultimaRuta = datos;
+
+                document.getElementById("mapflow-estado").textContent =
+                    "Ruta calculada correctamente: " +
+                    datos.cantidad_nodos + " nodos.";
+
+                document.getElementById("mapflow-resumen").textContent =
+                    "Distancia del recorrido: " +
+                    datos.distancia_km + " km";
+
+                actualizarTiempoEstimado();
+            })
+            .catch(error => {
+                console.error("Error:", error);
+
+                document.getElementById("mapflow-estado").textContent =
+                    "No se pudo calcular la ruta: " + error.message;
+            });
+        }
+    });
+
+    document.getElementById("mapflow-reiniciar")
+        .addEventListener("click", function() {
+            marcadores.forEach(function(marcador) {
+                mapFlowMap.removeLayer(marcador);
+            });
+
+            marcadores = [];
+            seleccion = [];
+
+            actualizarPanel();
+        });
+});
+"""
+
+script = script.replace("__MAPA__", mapa.get_name())
+script = script.replace("__NODOS__", nodos_json)
+
+mapa.get_root().script.add_child(Element(script))
 
 mapa.save("mapa.html")
+
+print("Nodos disponibles:", len(nodos_mapa))
+print("Mapa generado: mapa.html")
