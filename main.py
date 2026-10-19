@@ -67,6 +67,11 @@ mapa = folium.Map(
     control_scale=True
 )
 
+mapa.get_root().title = "MapFlow"
+
+mapa.get_root().header.add_child(
+    Element('<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">')
+)
 
 nodos_json = json.dumps(nodos_mapa)
 
@@ -179,6 +184,12 @@ window.addEventListener("load", function() {
         <button id="mapflow-reiniciar" type="button">
             Reiniciar selección
         </button>
+        <button id="mapflow-invertir">
+        Invertir ruta ↔
+        </button>
+        <button id="mapflow-copiar" type="button">
+            Copiar resumen
+        </button>
     `;
 
         L.DomEvent.disableClickPropagation(div);
@@ -188,6 +199,68 @@ window.addEventListener("load", function() {
     };
 
     panel.addTo(mapFlowMap);
+
+    document.getElementById("mapflow-copiar").addEventListener("click", async function(e) {
+        L.DomEvent.stopPropagation(e);
+
+        if (!ultimaRuta || seleccion.length !== 2) {
+            document.getElementById("mapflow-estado").textContent =
+                "Primero calcula una ruta.";
+            return;
+        }
+
+        var medio = document.getElementById("mapflow-medio");
+
+        var resumen = [
+            "MapFlow",
+            "Origen: " + seleccion[0].nodo.id,
+            "Destino: " + seleccion[1].nodo.id,
+            "Medio de transporte: " + medio.options[medio.selectedIndex].text,
+            "Distancia: " + ultimaRuta.distancia_km + " km",
+            document.getElementById("mapflow-tiempo").textContent
+        ].filter(Boolean).join("\\n");
+
+        try {
+            await navigator.clipboard.writeText(resumen);
+            document.getElementById("mapflow-estado").textContent =
+                "¡Resumen copiado correctamente!";
+        } catch (error) {
+            document.getElementById("mapflow-estado").textContent =
+                "No se pudo copiar. Revisa los permisos del navegador.";
+        }
+    });
+
+    document.getElementById("mapflow-invertir").addEventListener("click", function(e) {
+        L.DomEvent.stopPropagation(e);
+
+        if (seleccion.length !== 2) {
+            document.getElementById("mapflow-estado").textContent =
+                "Primero selecciona un origen y un destino.";
+            return;
+        }
+
+
+        var origenAnterior = seleccion[0].nodo;
+        var destinoAnterior = seleccion[1].nodo;
+
+
+        document.getElementById("mapflow-reiniciar").click();
+
+        mapFlowMap.fire("click", {
+            latlng: L.latLng(
+                destinoAnterior.lat,
+                destinoAnterior.lon
+            )
+        });
+
+        
+        mapFlowMap.fire("click", {
+            latlng: L.latLng(
+                origenAnterior.lat,
+                origenAnterior.lon
+            )
+        });
+    });
 
     document.getElementById("mapflow-medio")
         .addEventListener("change", actualizarTiempoEstimado);
@@ -533,17 +606,39 @@ window.addEventListener("load", function() {
         }
     });
 
-    document.getElementById("mapflow-reiniciar")
-        .addEventListener("click", function() {
-            marcadores.forEach(function(marcador) {
-                mapFlowMap.removeLayer(marcador);
-            });
+    document.getElementById("mapflow-reiniciar").addEventListener("click", function() {
 
-            marcadores = [];
-            seleccion = [];
-
-            actualizarPanel();
+        marcadores.forEach(function(marcador) {
+            mapFlowMap.removeLayer(marcador);
         });
+
+        seleccion = [];
+        marcadores = [];
+
+
+        if (lineaRuta) {
+            mapFlowMap.removeLayer(lineaRuta);
+            lineaRuta = null;
+        }
+
+
+        if (bordeRuta) {
+            mapFlowMap.removeLayer(bordeRuta);
+            bordeRuta = null;
+        }
+
+        flechasRuta.forEach(function(flecha) {
+            mapFlowMap.removeLayer(flecha);
+        });
+        flechasRuta = [];
+
+        ultimaRuta = null;
+
+        actualizarPanel();
+
+        document.getElementById("mapflow-resumen").textContent = "";
+        document.getElementById("mapflow-tiempo").textContent = "";
+    });
 });
 """
 
